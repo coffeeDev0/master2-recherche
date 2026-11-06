@@ -1,0 +1,448 @@
+\documentclass[aspectratio=169,10pt]{beamer}
+
+% ---------------------------------------------------------------
+% Style inspiré du modèle : bandeaux bleu nuit, accents orange,
+% blocs arrondis avec ombre, pied de page à trois zones.
+% ---------------------------------------------------------------
+\usetheme{default}
+\useoutertheme{infolines}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tikz}
+\usetikzlibrary{positioning, babel}
+
+\definecolor{navy}{HTML}{16213E}
+\definecolor{navydark}{HTML}{0F1A30}
+\definecolor{navymid}{HTML}{343F5C}
+\definecolor{slate}{HTML}{5A6578}
+\definecolor{accent}{HTML}{E07B22}
+\definecolor{brownbar}{HTML}{A85A18}
+\definecolor{creambody}{HTML}{F5EEE7}
+\definecolor{graybody}{HTML}{E8E9EC}
+\definecolor{nodefill}{HTML}{ECEDF0}
+\definecolor{nodeaccent}{HTML}{F7DFC6}
+
+\setbeamercolor{structure}{fg=navy}
+\setbeamercolor{frametitle}{bg=navy,fg=white}
+\setbeamerfont{frametitle}{size=\Large,series=\mdseries}
+\setbeamercolor{title}{bg=navy,fg=white}
+\setbeamerfont{title}{size=\Large,series=\mdseries}
+\setbeamerfont{subtitle}{size=\normalsize}
+\setbeamercolor{block title}{bg=navydark,fg=white}
+\setbeamercolor{block body}{bg=graybody,fg=black}
+\setbeamercolor{block title alerted}{bg=brownbar,fg=white}
+\setbeamercolor{block body alerted}{bg=creambody,fg=black}
+\setbeamercolor{alerted text}{fg=accent}
+\setbeamercolor{author in head/foot}{bg=slate,fg=white}
+\setbeamercolor{title in head/foot}{bg=navymid,fg=white}
+\setbeamercolor{date in head/foot}{bg=navy,fg=white}
+\setbeamercolor{item projected}{bg=navy,fg=white}
+\setbeamercolor{section number projected}{bg=navy,fg=white}
+\setbeamertemplate{blocks}[rounded][shadow=true]
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{headline}{}
+\setbeamertemplate{itemize items}[ball]
+\setbeamertemplate{enumerate items}[circle]
+\setbeamertemplate{section in toc}[circle]
+
+% Page de titre : titre dans un cadre arrondi bleu nuit
+\setbeamertemplate{title page}{
+  \vfill
+  \begin{beamercolorbox}[wd=\textwidth,sep=12pt,center,rounded=true,shadow=true]{title}
+    {\usebeamerfont{title}\inserttitle\par}
+    \vskip 4pt
+    {\usebeamerfont{subtitle}\insertsubtitle\par}
+  \end{beamercolorbox}
+  \vskip 1em
+  \begin{center}
+    {\small\insertauthor\par}
+    \vskip 0.5em
+    {\small\insertinstitute\par}
+    \vskip 0.5em
+    {\small\insertdate\par}
+  \end{center}
+  \vfill
+}
+
+\title[Autoscaling proactif]{Autoscaling proactif et conscient des dépendances pour microservices}
+\subtitle{Propagation de charge sur le graphe d'appels et allocation sous contrainte de SLO}
+\author[LEUDJEU WOUAPPI 22U2079]{Présentation de\\\textbf{LEUDJEU WOUAPPI Beautrel Horssel}\\Matricule: 22U2079\\\vspace{0.2cm}Encadré par \\\textbf{Pr. DJAM Xaveria Youh Kimbi}}
+\institute[Univ. Yaoundé I]{Université de Yaoundé I\\Faculté des Sciences\\Département d'Informatique}
+\date{\today}
+
+\begin{document}
+
+% ---------------------------------------------------------------
+% TITRE
+% ---------------------------------------------------------------
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+
+% ---------------------------------------------------------------
+% PLAN
+% ---------------------------------------------------------------
+\begin{frame}{Plan de la présentation}
+  \tableofcontents
+\end{frame}
+
+% ===============================================================
+\section{Concepts clés}
+% ===============================================================
+
+\begin{frame}{Concepts clés du thème}
+  \small
+  \begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.6cm}>{\raggedright\arraybackslash}p{9.6cm}@{}}
+    \textbf{Microservices} & Petits services autonomes qui coopèrent en s'appelant les uns les autres. \\[6pt]
+    \textbf{Instance} & Copie d'un service en cours d'exécution ; plus il y en a, plus le service absorbe de charge. \\[6pt]
+    \textbf{Autoscaling} & Ajustement automatique du nombre d'instances d'un service selon la charge. \\[6pt]
+    \textbf{Réactif / proactif} & Agir après la saturation, ou anticiper à partir de la charge prévue. \\[6pt]
+    \textbf{SLO} & Objectif de niveau de service, par exemple 95\,\% des requêtes en moins de 300 ms. \\[6pt]
+    \textbf{Graphe de dépendances} & Relations d'appel entre services : un pic en amont se propage en aval. \\[6pt]
+    \textbf{Propagation de charge} & Charge reçue par un service du fait de la charge de ses appelants. \\
+  \end{tabular}
+\end{frame}
+
+% ===============================================================
+\section{Contexte}
+% ===============================================================
+
+\begin{frame}{Contexte général}
+  \begin{columns}[T]
+    \column{0.55\textwidth}
+    \begin{itemize}
+      \item Les applications modernes (paiement mobile, commerce en ligne, billetterie\ldots) sont découpées en \textbf{microservices} qui s'appellent en chaîne.
+      \item Leur \textbf{charge varie fortement} : jours de paie, fêtes, promotions, ouverture de ventes\ldots
+      \item Pour s'adapter, on ajuste automatiquement le nombre d'instances de chaque service : c'est l'\textbf{autoscaling}.
+      \item Les outils courants (comme le HPA de Kubernetes) décident \textbf{service par service}, avec des \textbf{seuils fixes}, et \textbf{après} la saturation.
+    \end{itemize}
+    \vspace{0.2cm}
+    \begin{alertblock}{Enjeu}
+      Respecter le \textbf{SLO} sans payer des ressources inutiles.
+    \end{alertblock}
+
+    \column{0.42\textwidth}
+    \begin{center}
+    \begin{tikzpicture}[x=0.5cm,y=0.85cm,font=\scriptsize]
+      \draw[->] (0,0) -- (8.6,0) node[below left] {temps};
+      \draw[->] (0,0) -- (0,3.8) node[above] {charge};
+      % capacité fixe
+      \draw[dashed,slate,thick] (0,3.4) -- (8.2,3.4);
+      % capacité élastique
+      \draw[accent,very thick] (0,0.9) -- (1.7,0.9) -- (1.7,3.4) -- (4.5,3.4) -- (4.5,0.9) -- (8.2,0.9);
+      % charge
+      \draw[navy,very thick] (0,0.5) -- (2,0.5) .. controls (2.4,0.5) and (2.6,3.0) .. (3.2,3.05)
+            .. controls (3.9,3.05) and (4.0,0.6) .. (4.6,0.55) -- (8.2,0.5);
+      \node[navy] at (3.2,3.75) {pic prévisible};
+      % légende
+      \draw[navy,very thick] (0.2,-0.8) -- (1.0,-0.8) node[right,black] {charge};
+      \draw[dashed,slate,thick] (0.2,-1.4) -- (1.0,-1.4) node[right,black] {capacité fixe (coûteuse)};
+      \draw[accent,very thick] (0.2,-2.0) -- (1.0,-2.0) node[right,black] {capacité qui suit la charge};
+    \end{tikzpicture}
+    \end{center}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Comprendre avec un exemple : Mobile Money le jour de paie}
+  \footnotesize
+  Scénario fictif (chiffres illustratifs) : le jour de paie, à \textbf{8h00}, la charge passe de \textbf{300 à 6\,000 requêtes/s}.
+
+  \begin{center}
+  \resizebox{\textwidth}{!}{%
+  \begin{tikzpicture}[>=latex,
+      svc/.style={draw=navy, rounded corners, fill=nodefill, minimum width=1.8cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+      hot/.style={svc, fill=nodeaccent, draw=accent, very thick},
+      ext/.style={draw=accent, dashed, rounded corners, fill=white, align=center, font=\scriptsize, minimum height=0.65cm},
+      al/.style={midway, above=0.55cm, font=\scriptsize}]
+
+    % ----- colonne mise en évidence (goulot) -----
+    \fill[nodeaccent!60] (3.8,-0.62) rectangle (6.4,-2.3);
+
+    % ----- services (une même plateforme) -----
+    \node[svc] (g) at (0,0)    {Passerelle};
+    \node[svc] (t) at (2.6,0)  {Transfert};
+    \node[hot] (a) at (5.1,0)  {Anti-fraude};
+    \node[svc] (c) at (7.7,0)  {Comptes};
+    \node[svc] (s) at (10.3,0) {Notification\\SMS};
+
+    % ----- appels et facteurs d'appel -----
+    \draw[->,thick] (g) -- node[al] {$\alpha{=}1$} (t);
+    \draw[->,thick] (t) -- node[al] {$\alpha{=}1$} (a);
+    \draw[->,thick] (a) -- node[al] {$\alpha{=}0{,}9$} (c);
+    \draw[->,thick] (c) -- node[al] {$\alpha{=}2$} (s);
+
+    % ----- entrée, goulot, dépendance externe -----
+    \node[ext] (u) at (0,1.45) {Abonnés\\300 $\rightarrow$ 6\,000 req/s};
+    \draw[->,thick,accent] (u) -- (g);
+    \node[font=\scriptsize,text=accent,align=center] (cb) at (5.1,1.45) {Goulot caché :\\150 des 402 instances};
+    \draw[->,accent] (cb) -- (a);
+    \node[ext] (o) at (10.3,1.45) {Passerelle SMS de l'opérateur\\(externe, non pilotable)};
+    \draw[->,dashed,thick,accent] (s) -- (o);
+
+    % ----- tableau des valeurs -----
+    \foreach \y in {-0.62,-1.04,-1.46,-1.88,-2.3} {\draw[slate!50] (-4.1,\y) -- (11.5,\y);}
+
+    \node[anchor=east,font=\scriptsize] at (-1.05,-0.83) {Charge $\lambda_i$ (req/s)};
+    \node[anchor=east,font=\scriptsize] at (-1.05,-1.25) {Débit $\mu_i$ par instance};
+    \node[anchor=east,font=\scriptsize] at (-1.05,-1.67) {Instances $n_i$ à 8h00};
+    \node[anchor=east,font=\scriptsize] at (-1.05,-2.09) {Instances en temps normal};
+
+    \node[font=\scriptsize] at (0,-0.83)    {6\,000};
+    \node[font=\scriptsize] at (2.6,-0.83)  {6\,000};
+    \node[font=\scriptsize] at (5.1,-0.83)  {6\,000};
+    \node[font=\scriptsize] at (7.7,-0.83)  {5\,400};
+    \node[font=\scriptsize] at (10.3,-0.83) {10\,800};
+
+    \node[font=\scriptsize] at (0,-1.25)    {500};
+    \node[font=\scriptsize] at (2.6,-1.25)  {100};
+    \node[font=\scriptsize] at (5.1,-1.25)  {40};
+    \node[font=\scriptsize] at (7.7,-1.25)  {60};
+    \node[font=\scriptsize] at (10.3,-1.25) {120};
+
+    \node[font=\scriptsize\bfseries] at (0,-1.67)    {12};
+    \node[font=\scriptsize\bfseries] at (2.6,-1.67)  {60};
+    \node[font=\scriptsize\bfseries,text=accent] at (5.1,-1.67) {150};
+    \node[font=\scriptsize\bfseries] at (7.7,-1.67)  {90};
+    \node[font=\scriptsize\bfseries] at (10.3,-1.67) {90};
+
+    \node[font=\scriptsize] at (0,-2.09)    {1};
+    \node[font=\scriptsize] at (2.6,-2.09)  {3};
+    \node[font=\scriptsize] at (5.1,-2.09)  {8};
+    \node[font=\scriptsize] at (7.7,-2.09)  {5};
+    \node[font=\scriptsize] at (10.3,-2.09) {5};
+  \end{tikzpicture}}
+  \end{center}
+
+  \vspace{-0.1cm}
+  {\scriptsize $\alpha_{ij}$ : appels de $i$ vers $j$ par requête reçue \quad $\bullet$ \quad $\lambda_j = \sum_i \alpha_{ij}\,\lambda_i$ \quad $\bullet$ \quad $n_i = \lceil \lambda_i / \mu_i \rceil$\par}
+
+  \vspace{0.05cm}
+  \begin{columns}[T]
+    \column{0.49\textwidth}
+    \begin{alertblock}{Classique (réactif, service par service)}
+      \scriptsize Chaque service sature à son tour : environ \textbf{10 min} d'indisponibilité, aggravées par les relances des utilisateurs.
+    \end{alertblock}
+    \column{0.49\textwidth}
+    \begin{block}{Intelligent (proactif, sur tout le graphe)}
+      \scriptsize 7h55 : les \textbf{402 instances} (au lieu de 22) démarrent ensemble : \textbf{0 min} d'indisponibilité.
+    \end{block}
+  \end{columns}
+\end{frame}
+
+% ===============================================================
+\section{Problématique}
+% ===============================================================
+
+\begin{frame}{Pourquoi l'autoscaling réactif échoue : trois limites structurelles}
+  \begin{enumerate}
+    \item \textbf{Réactivité tardive.} Le service n'agit qu'une fois la saturation constatée. Or, à 8h00, la charge est déjà là, et le démarrage de nouvelles instances (\emph{cold start}) prend encore du temps.
+    \item \textbf{Cécité aux dépendances.} Chaque service (transfert, anti-fraude, comptes\ldots) a son propre autoscaler. La passerelle SMS est gérée par un opérateur externe. \textbf{Personne ne décide pour la chaîne entière}.
+    \item \textbf{Seuils fixes.} L'autoscaler applique une cible d'utilisation CPU ou mémoire choisie une fois pour toutes, sans savoir que le pic de paie est \textbf{prévisible} (il revient chaque mois) ni que la contrainte réelle est la latence de bout en bout.
+  \end{enumerate}
+
+  \vspace{0.3cm}
+  \begin{alertblock}{Conséquence}
+    La latence de bout en bout dépend de \emph{tous} les composants simultanément, mais chaque autoscaler ne voit qu'un composant isolé --- et parfois ne voit même pas les dépendances dont il a besoin pour agir.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Notre problématique}
+  \begin{alertblock}{Problématique}
+    Décider automatiquement, \textbf{avant} l'arrivée d'un pic de charge, du nombre d'instances de \textbf{chaque} microservice, en tenant compte des \textbf{appels entre services}, pour respecter le SLO au moindre coût.
+  \end{alertblock}
+
+  \vspace{0.2cm}
+  \textbf{Formellement :} pour tout \(i \in S\) et tout \(t\), trouver \(n_i(t) \in \mathbb{N}\) minimisant
+  \[
+  \sum_t \sum_{i \in S} c_i \, n_i(t)
+  \]
+  sous :
+  \begin{itemize}
+    \item \(\forall t,\; L(t) \le \text{SLO}\) ;
+    \item \(\forall j \in S,\; \lambda_j(t) = \lambda_j^{ext}(t) + \sum_{(i,j) \in E} \alpha_{ij} \, \lambda_i(t)\) ;
+    \item \(\forall i \in S,\; \lambda_i(t) \le n_i(t) \, \mu_i\).
+  \end{itemize}
+  {\scriptsize où \(n_i(t)\) est le nombre d'instances du service \(i\), \(c_i\) son coût unitaire, \(\lambda_i(t)\) sa charge, \(\mu_i\) le débit d'une instance, \(\alpha_{ij}\) le facteur d'appel de \(i\) vers \(j\) et \(L(t)\) la latence de bout en bout.\par}
+\end{frame}
+
+% ===============================================================
+\section{Revue de la littérature}
+% ===============================================================
+
+\begin{frame}{Ce que la recherche a commencé à proposer}
+  \begin{alertblock}{Notre problématique (la même pour chaque article)}
+    \small Décider automatiquement, avant un pic de charge, du nombre d'instances de chaque microservice, en tenant compte des appels entre services, pour respecter le SLO au moindre coût.
+  \end{alertblock}
+
+  \vspace{0.2cm}
+  \footnotesize
+  \begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.9cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}p{4.2cm}@{}}
+    \toprule
+    \textbf{Article} & \textbf{Auteurs (premiers)} & \textbf{Publication} & \textbf{Idée générale} \\
+    \midrule
+    \textbf{Erms} & S.~Luo, H.~Xu, K.~Ye et al. & ASPLOS 2023 (conférence) & Gérer les ressources de microservices partagés en garantissant le SLA \\[6pt]
+    \textbf{GRAF} & J.~Park, B.~Choi, C.~Lee, D.~Han & CoNEXT 2021 (conférence) & Allouer le CPU de façon proactive grâce à un réseau de neurones sur graphes \\[6pt]
+    \textbf{Mondal et al.} & S.~K.~Mondal, X.~Wu, H.~M.~D.~Kabir et al. & Mathematics (MDPI), 2023 & Prévoir la charge (GRU) et construire un autoscaler Kubernetes personnalisé \\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+% ----------------------------- ERMS ----------------------------
+\begin{frame}{Article 1 : Erms (ASPLOS 2023) --- méthodologie et limites}
+  \begin{columns}[T]
+    \column{0.45\textwidth}
+    \begin{block}{Fiche de l'article}
+      \scriptsize
+      \textbf{Erms: Efficient Resource Management for Shared Microservices with SLA Guarantees}\\[2pt]
+      \textbf{Auteurs :} S.~Luo, H.~Xu, K.~Ye, G.~Xu, L.~Zhang, J.~He, G.~Yang, C.~Xu (Shenzhen Institute of Advanced Technology, University of Macau, Alibaba)\\[2pt]
+      \textbf{Résultat clé :} violations de SLA divisées par 5 et ressources divisées par 1,6 par rapport à l'état de l'art.
+    \end{block}
+    \begin{alertblock}{Limites}
+      \scriptsize
+      \begin{itemize}
+        \item Graphes de dépendances supposés \textbf{statiques} ; sur-provisionnement s'ils sont très dynamiques (auteurs).
+        \item Profilage hors ligne long : près de 3 jours pour un service.
+        \item Dimensionnement à partir de la charge \textbf{observée} : pas de prévision (notre lecture).
+      \end{itemize}
+    \end{alertblock}
+
+    \column{0.52\textwidth}
+    \textbf{Méthodologie}
+    \small
+    \begin{enumerate}
+      \item \textbf{Profilage hors ligne :} la latence d'un microservice est modélisée comme une fonction linéaire par morceaux de la charge (et de l'interférence CPU/mémoire).
+      \item \textbf{Fusion du graphe :} les appels parallèles sont ramenés à une chaîne séquentielle.
+      \item \textbf{Cibles de latence :} calcul par optimisation convexe (solution en forme fermée).
+      \item \textbf{Priorités :} ordonnancement par priorité aux microservices partagés, puis placement des conteneurs sur Kubernetes.
+      \item \textbf{Évaluation :} DeathStarBench (cluster de 20 machines) et simulations avec des traces d'Alibaba.
+    \end{enumerate}
+  \end{columns}
+\end{frame}
+
+% ----------------------------- GRAF ----------------------------
+\begin{frame}{Article 2 : GRAF (CoNEXT 2021) --- méthodologie et limites}
+  \begin{columns}[T]
+    \column{0.45\textwidth}
+    \begin{block}{Fiche de l'article}
+      \scriptsize
+      \textbf{GRAF: A Graph Neural Network based Proactive Resource Allocation Framework for SLO-Oriented Microservices}\\[2pt]
+      \textbf{Auteurs :} J.~Park, B.~Choi, C.~Lee, D.~Han (KAIST, Toyota Motor Corporation)\\[2pt]
+      \textbf{Résultat clé :} jusqu'à 19\,\% de CPU économisé ; lors d'un pic, 36\,\% de ressources en moins et une latence stabilisée jusqu'à 2,6 fois plus vite.
+    \end{block}
+    \begin{alertblock}{Limites}
+      \scriptsize
+      \begin{itemize}
+        \item \textbf{Passage à l'échelle} : le modèle peut se dégrader pour des centaines ou milliers de microservices (auteurs).
+        \item Modèle entraîné \textbf{par application}, à refaire si elle change (environ 50\,000 échantillons).
+        \item Réagit à la charge \textbf{actuelle} du front-end : pas de prévision (notre lecture).
+      \end{itemize}
+    \end{alertblock}
+
+    \column{0.52\textwidth}
+    \textbf{Méthodologie}
+    \small
+    \begin{enumerate}
+      \item \textbf{Observer} la charge du front-end et les traces des requêtes.
+      \item \textbf{Répartir} cette charge sur chaque microservice du graphe.
+      \item \textbf{Prédire} la latence de bout en bout (99e percentile) avec un réseau de neurones sur graphes (GNN).
+      \item \textbf{Optimiser} les quotas CPU par descente de gradient sous contrainte de SLO.
+      \item \textbf{Déployer} le nombre d'instances correspondant sur Kubernetes.
+      \item \textbf{Évaluation :} Online Boutique et Social Network (7 machines), face à l'autoscaler de Kubernetes réglé finement.
+    \end{enumerate}
+  \end{columns}
+\end{frame}
+
+% ---------------------------- MONDAL ---------------------------
+\begin{frame}{Article 3 : Mondal et al. (Mathematics 2023) --- méthodologie et limites}
+  \begin{columns}[T]
+    \column{0.45\textwidth}
+    \begin{block}{Fiche de l'article}
+      \scriptsize
+      \textbf{Toward Optimal Load Prediction and Customizable Autoscaling Scheme for Kubernetes}\\[2pt]
+      \textbf{Auteurs :} S.~K.~Mondal, X.~Wu, H.~M.~D.~Kabir, H.-N.~Dai, K.~Ni, H.~Yuan, T.~Wang (Macau University of Science and Technology et autres)\\[2pt]
+      \textbf{Résultat clé :} le GRU est le meilleur modèle de prévision ; sur charge stable, le comportement est proche du HPA (faisabilité).
+    \end{block}
+    \begin{alertblock}{Limites}
+      \scriptsize
+      \begin{itemize}
+        \item Modèle construit sur l'utilisation CPU d'un nœud, pas par tâche (auteurs).
+        \item Un modèle supervisé à entraîner par métrique (auteurs).
+        \item Un seul déploiement à la fois : \textbf{pas de dépendances} entre services (notre lecture).
+      \end{itemize}
+    \end{alertblock}
+
+    \column{0.52\textwidth}
+    \textbf{Méthodologie}
+    \small
+    \begin{enumerate}
+      \item \textbf{Comparer} ARIMA, LSTM, BiLSTM et GRU pour prédire la charge CPU (jeu de données Google cluster-data-2011).
+      \item \textbf{Retenir} le meilleur modèle : le GRU.
+      \item \textbf{Intégrer} le modèle dans un autoscaler personnalisé (Custom Pod Autoscaler) : collecte des métriques, puis évaluation du nombre de réplicas ; repli sur la logique du HPA si l'historique est trop court.
+      \item \textbf{Déployer} sur un cluster Kubernetes (1 maître, 2 travailleurs) et comparer au HPA.
+    \end{enumerate}
+  \end{columns}
+\end{frame}
+
+% ----------------------------- SYNTHÈSE -----------------------
+\begin{frame}{Synthèse : ce que font les trois articles}
+  \footnotesize
+  \begin{center}
+  \begin{tabular}{@{}>{\raggedright\arraybackslash}p{3cm}>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}p{3.2cm}@{}}
+    \toprule
+     & \textbf{Erms} & \textbf{GRAF} & \textbf{Mondal et al.} \\
+    \midrule
+    Dépendances entre services & Oui (graphe d'appels) & Oui (GNN sur le graphe) & Non (un déploiement) \\[3pt]
+    Anticipation & Non (charge observée) & Partielle (charge du front-end) & Oui (prévision GRU) \\[3pt]
+    Objectif & SLA au moindre coût & CPU minimal sous SLO & Remplacer le HPA réactif \\[3pt]
+    Limite principale & Graphes statiques ; profilage long & Passage à l'échelle ; réentraînement & Pas de dépendances ; validation limitée \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.2cm}
+  \normalsize
+  \begin{alertblock}{Premier constat (à confirmer par une lecture approfondie)}
+    \small Parmi ces trois articles, aucun ne combine la \textbf{prévision de la charge} et sa \textbf{propagation sur le graphe de dépendances}. Ces travaux montrent que la communauté a identifié le problème. Mais ils laissent ouverte la question de la propagation explicite de la charge prévue sur le graphe, et de la prise en compte des dépendances dont l'autoscaler dépend lui-même.
+  \end{alertblock}
+\end{frame}
+
+% ===============================================================
+\section{La question que nous posons}
+% ===============================================================
+
+\begin{frame}{Le thème et la question de recherche}
+  \begin{block}{Thème}
+    Autoscaling proactif et conscient des dépendances pour les architectures microservices : propagation de charge sur le graphe d'appels et allocation de ressources sous contrainte de SLO
+  \end{block}
+  \vspace{0.2cm}
+  \begin{alertblock}{Question de recherche (provisoire)}
+    Comment dimensionner dynamiquement et simultanément l'ensemble des services d'une application microservices, en exploitant le graphe de dépendances et la prédiction de charge, de façon à respecter les SLO au moindre coût, y compris lorsque les dépendances nécessaires au provisionnement lui-même ne sont pas explicitement modélisées ?
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Sous-questions de recherche}
+  \begin{enumerate}
+    \item[\textbf{SQ1}] Comment \textbf{modéliser la propagation de la charge} d'un service vers ses dépendances sur le graphe d'appels, y compris vers une dépendance non modélisée explicitement (par exemple une passerelle SMS externe) ?
+    \item[\textbf{SQ2}] Comment \textbf{prévoir la charge d'entrée} de façon fiable, y compris face aux pics imprévus ?
+    \item[\textbf{SQ3}] Comment déterminer \textbf{simultanément} le nombre d'instances de chaque service, en tenant compte de leur temps de démarrage, au moindre coût ?
+  \end{enumerate}
+
+  \vspace{0.3cm}
+  \begin{block}{Remarque}
+    \small Ces questions guideront la lecture approfondie des articles ; la démarche de recherche sera précisée ensuite.
+  \end{block}
+\end{frame}
+
+\begin{frame}[plain]
+  \begin{center}
+    \Large
+    Merci de votre attention.
+  \end{center}
+\end{frame}
+
+\end{document}
