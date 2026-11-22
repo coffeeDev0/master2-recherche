@@ -238,7 +238,7 @@
 \section{Problématique}
 % ===============================================================
 
-\begin{frame}{Pourquoi l'autoscaling réactif échoue : trois limites structurelles}
+\begin{frame}{Pourquoi l'autoscaling réactif pose problèmes : trois limites structurelles}
   \begin{enumerate}
     \item \textbf{Réactivité tardive.} Le service n'agit qu'une fois la saturation constatée. Or, à 8h00, la charge est déjà là, et le démarrage de nouvelles instances (\emph{cold start}) prend encore du temps.
     \item \textbf{Cécité aux dépendances.} Chaque service (transfert, anti-fraude, comptes\ldots) a son propre autoscaler. La passerelle SMS est gérée par un opérateur externe. \textbf{Personne ne décide pour la chaîne entière}.
@@ -247,7 +247,7 @@
 
   \vspace{0.3cm}
   \begin{alertblock}{Conséquence}
-    La latence de bout en bout dépend de \emph{tous} les composants simultanément, mais chaque autoscaler ne voit qu'un composant isolé --- et parfois ne voit même pas les dépendances dont il a besoin pour agir.
+    La latence de bout en bout dépend de \emph{tous} les composants simultanément, mais chaque autoscaler ne voit qu'un composant isolé et parfois ne voit même pas les dépendances dont il a besoin pour agir.
   \end{alertblock}
 \end{frame}
 
@@ -406,7 +406,7 @@
 
   \vspace{0.2cm}
   \normalsize
-  \begin{alertblock}{Premier constat (à confirmer par une lecture approfondie)}
+  \begin{alertblock}{Premier constat}
     \small Parmi ces trois articles, aucun ne combine la \textbf{prévision de la charge} et sa \textbf{propagation sur le graphe de dépendances}. Ces travaux montrent que la communauté a identifié le problème. Mais ils laissent ouverte la question de la propagation explicite de la charge prévue sur le graphe, et de la prise en compte des dépendances dont l'autoscaler dépend lui-même.
   \end{alertblock}
 \end{frame}
@@ -432,10 +432,10 @@
     \item[\textbf{SQ3}] Comment déterminer \textbf{simultanément} le nombre d'instances de chaque service, en tenant compte de leur temps de démarrage, au moindre coût ?
   \end{enumerate}
 
-  \vspace{0.3cm}
-  \begin{block}{Remarque}
-    \small Ces questions guideront la lecture approfondie des articles ; la démarche de recherche sera précisée ensuite.
-  \end{block}
+  % \vspace{0.3cm}
+  % \begin{block}{Remarque}
+  %   \small Ces questions guideront la lecture approfondie des articles ; la démarche de recherche sera précisée ensuite.
+  % \end{block}
 \end{frame}
 
 \begin{frame}[plain]
