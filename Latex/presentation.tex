@@ -116,8 +116,8 @@
   \begin{columns}[T]
     \column{0.55\textwidth}
     \begin{itemize}
-      \item Les applications modernes (paiement mobile, commerce en ligne, billetterie\ldots) sont découpées en \textbf{microservices} qui s'appellent en chaîne.
-      \item Leur \textbf{charge varie fortement} : jours de paie, fêtes, promotions, ouverture de ventes\ldots
+      \item Les applications modernes (réservation de billets, commerce en ligne, paiement mobile\ldots) sont découpées en \textbf{microservices} qui s'appellent en chaîne.
+      \item Leur \textbf{charge varie fortement} : fêtes de fin d'année, ouverture des ventes, promotions\ldots
       \item Pour s'adapter, on ajuste automatiquement le nombre d'instances de chaque service : c'est l'\textbf{autoscaling}.
       \item Les outils courants (comme le HPA de Kubernetes) décident \textbf{service par service}, avec des \textbf{seuils fixes}, et \textbf{après} la saturation.
     \end{itemize}
@@ -148,73 +148,61 @@
   \end{columns}
 \end{frame}
 
-\begin{frame}{Comprendre avec un exemple : Mobile Money le jour de paie}
+\begin{frame}{Comprendre avec un exemple : la réservation de billets de voyage}
   \footnotesize
-  Scénario fictif (chiffres illustratifs) : le jour de paie, à \textbf{8h00}, la charge passe de \textbf{300 à 6\,000 requêtes/s}.
+  Scénario fictif (chiffres illustratifs) : une compagnie de transport ouvre les réservations des fêtes le \textbf{23 décembre à 6h00}. La charge passe de \textbf{200 à 5\,000 requêtes/s}. Chaque voyageur cherche un trajet, voit les sièges libres, réserve, puis paie.
 
   \begin{center}
   \resizebox{\textwidth}{!}{%
   \begin{tikzpicture}[>=latex,
-      svc/.style={draw=navy, rounded corners, fill=nodefill, minimum width=1.8cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+      svc/.style={draw=navy, rounded corners, fill=nodefill, minimum width=2.1cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
       hot/.style={svc, fill=nodeaccent, draw=accent, very thick},
       ext/.style={draw=accent, dashed, rounded corners, fill=white, align=center, font=\scriptsize, minimum height=0.65cm},
-      al/.style={midway, above=0.55cm, font=\scriptsize}]
+      al/.style={midway, above=1pt, font=\scriptsize}]
 
     % ----- colonne mise en évidence (goulot) -----
-    \fill[nodeaccent!60] (3.8,-0.62) rectangle (6.4,-2.3);
+    \fill[nodeaccent!60] (2.05,-0.62) rectangle (4.15,-1.88);
 
     % ----- services (une même plateforme) -----
-    \node[svc] (g) at (0,0)    {Passerelle};
-    \node[svc] (t) at (2.6,0)  {Transfert};
-    \node[hot] (a) at (5.1,0)  {Anti-fraude};
-    \node[svc] (c) at (7.7,0)  {Comptes};
-    \node[svc] (s) at (10.3,0) {Notification\\SMS};
+    \node[svc] (r) at (0,0)   {Recherche};
+    \node[hot] (d) at (3.1,0) {Disponibilité};
+    \node[svc] (b) at (6.2,0) {Réservation};
+    \node[svc] (p) at (9.3,0) {Paiement};
 
     % ----- appels et facteurs d'appel -----
-    \draw[->,thick] (g) -- node[al] {$\alpha{=}1$} (t);
-    \draw[->,thick] (t) -- node[al] {$\alpha{=}1$} (a);
-    \draw[->,thick] (a) -- node[al] {$\alpha{=}0{,}9$} (c);
-    \draw[->,thick] (c) -- node[al] {$\alpha{=}2$} (s);
+    \draw[->,thick] (r) -- node[al] {$\alpha{=}1$} (d);
+    \draw[->,thick] (d) -- node[al] {$\alpha{=}0{,}4$} (b);
+    \draw[->,thick] (b) -- node[al] {$\alpha{=}0{,}6$} (p);
 
     % ----- entrée, goulot, dépendance externe -----
-    \node[ext] (u) at (0,1.45) {Abonnés\\300 $\rightarrow$ 6\,000 req/s};
-    \draw[->,thick,accent] (u) -- (g);
-    \node[font=\scriptsize,text=accent,align=center] (cb) at (5.1,1.45) {Goulot caché :\\150 des 402 instances};
-    \draw[->,accent] (cb) -- (a);
-    \node[ext] (o) at (10.3,1.45) {Passerelle SMS de l'opérateur\\(externe, non pilotable)};
-    \draw[->,dashed,thick,accent] (s) -- (o);
+    \node[ext] (v) at (0,1.45) {Voyageurs\\200 $\rightarrow$ 5\,000 req/s};
+    \draw[->,thick,accent] (v) -- (r);
+    \node[font=\scriptsize,text=accent,align=center] (cb) at (3.1,1.45) {Goulot caché :\\100 des 220 instances};
+    \draw[->,accent] (cb) -- (d);
+    \node[ext] (x) at (9.3,1.45) {Prestataire de paiement\\(externe, non pilotable)};
+    \draw[->,dashed,thick,accent] (p) -- (x);
 
     % ----- tableau des valeurs -----
-    \foreach \y in {-0.62,-1.04,-1.46,-1.88,-2.3} {\draw[slate!50] (-4.1,\y) -- (11.5,\y);}
+    \foreach \y in {-0.62,-1.04,-1.46,-1.88} {\draw[slate!50] (-4.1,\y) -- (10.9,\y);}
 
-    \node[anchor=east,font=\scriptsize] at (-1.05,-0.83) {Charge $\lambda_i$ (req/s)};
-    \node[anchor=east,font=\scriptsize] at (-1.05,-1.25) {Débit $\mu_i$ par instance};
-    \node[anchor=east,font=\scriptsize] at (-1.05,-1.67) {Instances $n_i$ à 8h00};
-    \node[anchor=east,font=\scriptsize] at (-1.05,-2.09) {Instances en temps normal};
+    \node[anchor=east,font=\scriptsize] at (-1.2,-0.83) {Charge $\lambda_i$ (req/s)};
+    \node[anchor=east,font=\scriptsize] at (-1.2,-1.25) {Débit $\mu_i$ par instance};
+    \node[anchor=east,font=\scriptsize] at (-1.2,-1.67) {Instances $n_i$ à 6h00};
 
-    \node[font=\scriptsize] at (0,-0.83)    {6\,000};
-    \node[font=\scriptsize] at (2.6,-0.83)  {6\,000};
-    \node[font=\scriptsize] at (5.1,-0.83)  {6\,000};
-    \node[font=\scriptsize] at (7.7,-0.83)  {5\,400};
-    \node[font=\scriptsize] at (10.3,-0.83) {10\,800};
+    \node[font=\scriptsize] at (0,-0.83)   {5\,000};
+    \node[font=\scriptsize] at (3.1,-0.83) {5\,000};
+    \node[font=\scriptsize] at (6.2,-0.83) {2\,000};
+    \node[font=\scriptsize] at (9.3,-0.83) {1\,200};
 
-    \node[font=\scriptsize] at (0,-1.25)    {500};
-    \node[font=\scriptsize] at (2.6,-1.25)  {100};
-    \node[font=\scriptsize] at (5.1,-1.25)  {40};
-    \node[font=\scriptsize] at (7.7,-1.25)  {60};
-    \node[font=\scriptsize] at (10.3,-1.25) {120};
+    \node[font=\scriptsize] at (0,-1.25)   {500};
+    \node[font=\scriptsize] at (3.1,-1.25) {50};
+    \node[font=\scriptsize] at (6.2,-1.25) {25};
+    \node[font=\scriptsize] at (9.3,-1.25) {40};
 
-    \node[font=\scriptsize\bfseries] at (0,-1.67)    {12};
-    \node[font=\scriptsize\bfseries] at (2.6,-1.67)  {60};
-    \node[font=\scriptsize\bfseries,text=accent] at (5.1,-1.67) {150};
-    \node[font=\scriptsize\bfseries] at (7.7,-1.67)  {90};
-    \node[font=\scriptsize\bfseries] at (10.3,-1.67) {90};
-
-    \node[font=\scriptsize] at (0,-2.09)    {1};
-    \node[font=\scriptsize] at (2.6,-2.09)  {3};
-    \node[font=\scriptsize] at (5.1,-2.09)  {8};
-    \node[font=\scriptsize] at (7.7,-2.09)  {5};
-    \node[font=\scriptsize] at (10.3,-2.09) {5};
+    \node[font=\scriptsize\bfseries] at (0,-1.67)   {10};
+    \node[font=\scriptsize\bfseries,text=accent] at (3.1,-1.67) {100};
+    \node[font=\scriptsize\bfseries] at (6.2,-1.67) {80};
+    \node[font=\scriptsize\bfseries] at (9.3,-1.67) {30};
   \end{tikzpicture}}
   \end{center}
 
@@ -225,11 +213,11 @@
   \begin{columns}[T]
     \column{0.49\textwidth}
     \begin{alertblock}{Classique (réactif, service par service)}
-      \scriptsize Chaque service sature à son tour : environ \textbf{10 min} d'indisponibilité, aggravées par les relances des utilisateurs.
+      \scriptsize Chaque service sature à son tour : environ \textbf{10 min} d'erreurs, aggravées par les relances des voyageurs.
     \end{alertblock}
     \column{0.49\textwidth}
     \begin{block}{Intelligent (proactif, sur tout le graphe)}
-      \scriptsize 7h55 : les \textbf{402 instances} (au lieu de 22) démarrent ensemble : \textbf{0 min} d'indisponibilité.
+      \scriptsize 5h55 : les \textbf{220 instances} (au lieu de 11) démarrent ensemble : \textbf{0 min} d'indisponibilité.
     \end{block}
   \end{columns}
 \end{frame}
@@ -238,11 +226,11 @@
 \section{Problématique}
 % ===============================================================
 
-\begin{frame}{Pourquoi l'autoscaling réactif pose problèmes : trois limites structurelles}
+\begin{frame}{Pourquoi l'autoscaling réactif pose problème : trois limites structurelles}
   \begin{enumerate}
-    \item \textbf{Réactivité tardive.} Le service n'agit qu'une fois la saturation constatée. Or, à 8h00, la charge est déjà là, et le démarrage de nouvelles instances (\emph{cold start}) prend encore du temps.
-    \item \textbf{Cécité aux dépendances.} Chaque service (transfert, anti-fraude, comptes\ldots) a son propre autoscaler. La passerelle SMS est gérée par un opérateur externe. \textbf{Personne ne décide pour la chaîne entière}.
-    \item \textbf{Seuils fixes.} L'autoscaler applique une cible d'utilisation CPU ou mémoire choisie une fois pour toutes, sans savoir que le pic de paie est \textbf{prévisible} (il revient chaque mois) ni que la contrainte réelle est la latence de bout en bout.
+    \item \textbf{Réactivité tardive.} Le service n'agit qu'une fois la saturation constatée. Or, à 6h00, la charge est déjà là, et le démarrage de nouvelles instances (\emph{cold start}) prend encore du temps.
+    \item \textbf{Cécité aux dépendances.} Chaque service (recherche, disponibilité, réservation, paiement) a son propre autoscaler. Le paiement dépend d'un prestataire externe. \textbf{Personne ne décide pour la chaîne entière}.
+    \item \textbf{Seuils fixes.} L'autoscaler applique une cible d'utilisation CPU ou mémoire choisie une fois pour toutes, sans savoir que le pic des fêtes est \textbf{prévisible} (il revient chaque année à la même date) ni que la contrainte réelle est la latence de bout en bout.
   \end{enumerate}
 
   \vspace{0.3cm}
@@ -427,7 +415,7 @@
 
 \begin{frame}{Sous-questions de recherche}
   \begin{enumerate}
-    \item[\textbf{SQ1}] Comment \textbf{modéliser la propagation de la charge} d'un service vers ses dépendances sur le graphe d'appels, y compris vers une dépendance non modélisée explicitement (par exemple une passerelle SMS externe) ?
+    \item[\textbf{SQ1}] Comment \textbf{modéliser la propagation de la charge} d'un service vers ses dépendances sur le graphe d'appels, y compris vers une dépendance non modélisée explicitement (par exemple un prestataire de paiement externe) ?
     \item[\textbf{SQ2}] Comment \textbf{prévoir la charge d'entrée} de façon fiable, y compris face aux pics imprévus ?
     \item[\textbf{SQ3}] Comment déterminer \textbf{simultanément} le nombre d'instances de chaque service, en tenant compte de leur temps de démarrage, au moindre coût ?
   \end{enumerate}
